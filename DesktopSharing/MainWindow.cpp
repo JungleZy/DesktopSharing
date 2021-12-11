@@ -3,8 +3,8 @@
 
 MainWindow::MainWindow()
 {
-	window_width_   = 960;
-	window_height_  = 740;
+	window_width_   = 600;
+	window_height_  = 400;
 	video_width_    = window_width_;
 	video_height_   = window_height_ - kMinOverlayHeight;
 	overlay_width_  = window_width_;
@@ -274,11 +274,7 @@ bool MainWindow::StartLive(int& event_type,
 
 	/* reset video encoder */
 	if (avconfig_ != avconfig) {
-		ScreenLive::Instance().StopLive(SCREEN_LIVE_RTSP_SERVER);
-		ScreenLive::Instance().StopLive(SCREEN_LIVE_RTSP_PUSHER);
 		ScreenLive::Instance().StopLive(SCREEN_LIVE_RTMP_PUSHER);
-		overlay_->SetLiveState(EVENT_TYPE_RTSP_SERVER, false);
-		overlay_->SetLiveState(EVENT_TYPE_RTSP_PUSHER, false);
 		overlay_->SetLiveState(EVENT_TYPE_RTMP_PUSHER, false);
 		ScreenLive::Instance().StopEncoder();
 		if (ScreenLive::Instance().StartEncoder(avconfig) < 0) {
@@ -294,33 +290,13 @@ bool MainWindow::StartLive(int& event_type,
 	LiveConfig live_config;
 	bool ret = false;
 
-	if (event_type == EVENT_TYPE_RTSP_SERVER) {
-		live_config.ip = live_settings[0];
-		live_config.port = atoi(live_settings[1].c_str());
-		live_config.suffix = live_settings[2];
-		ret = ScreenLive::Instance().StartLive(SCREEN_LIVE_RTSP_SERVER, live_config);
-	}
-	else if (event_type == EVENT_TYPE_RTSP_PUSHER) {
-		live_config.rtsp_url = live_settings[0];
-		ret = ScreenLive::Instance().StartLive(SCREEN_LIVE_RTSP_PUSHER, live_config);
-	}
-	else if (event_type == EVENT_TYPE_RTMP_PUSHER) {
-		live_config.rtmp_url = live_settings[0];
-		ret = ScreenLive::Instance().StartLive(SCREEN_LIVE_RTMP_PUSHER, live_config);
-	}
+	live_config.rtmp_url = live_settings[0];
+	ret = ScreenLive::Instance().StartLive(SCREEN_LIVE_RTMP_PUSHER, live_config);
 
 	return ret;
 }
 
 void MainWindow::StopLive(int event_type)
 {
-	if (event_type == EVENT_TYPE_RTSP_SERVER) {
-		ScreenLive::Instance().StopLive(SCREEN_LIVE_RTSP_SERVER);
-	}
-	else if (event_type == EVENT_TYPE_RTSP_PUSHER) {
-		ScreenLive::Instance().StopLive(SCREEN_LIVE_RTSP_PUSHER);
-	}
-	else if (event_type == EVENT_TYPE_RTMP_PUSHER) {
-		ScreenLive::Instance().StopLive(SCREEN_LIVE_RTMP_PUSHER);
-	}
+	ScreenLive::Instance().StopLive(SCREEN_LIVE_RTMP_PUSHER);
 }

@@ -17,8 +17,6 @@
 
 enum OverlayEventType
 {
-	EVENT_TYPE_RTSP_SERVER = 0x001,
-	EVENT_TYPE_RTSP_PUSHER = 0x002,
 	EVENT_TYPE_RTMP_PUSHER = 0x003,
 };
 
@@ -79,9 +77,6 @@ private:
 	char encoder_framerate_[3];
 
 	struct LiveInfo {
-		char server_ip[16];
-		char server_port[6];
-		char server_stream[16];
 		char pusher_url[60];
 
 		bool state = false;
