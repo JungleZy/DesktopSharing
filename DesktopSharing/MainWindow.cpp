@@ -4,7 +4,7 @@
 MainWindow::MainWindow()
 {
 	window_width_   = 600;
-	window_height_  = 400;
+	window_height_  = 437.5;
 	video_width_    = window_width_;
 	video_height_   = window_height_ - kMinOverlayHeight;
 	overlay_width_  = window_width_;
@@ -37,7 +37,7 @@ bool MainWindow::Create()
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
-	int window_flag = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
+	int window_flag = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
 	window_ = SDL_CreateWindow("Screen Live", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		window_width_, window_height_, window_flag);
 	SDL_GLContext gl_context = SDL_GL_CreateContext(window_);
@@ -156,6 +156,7 @@ bool MainWindow::Init()
 
 	overlay_->SetRect(0, 0 + video_height_, video_width_, kMinOverlayHeight);
 	overlay_->RegisterObserver(this);
+	//overlay_->NotifyEvent(EVENT_TYPE_RTMP_PUSHER);
 	return true;
 }
 

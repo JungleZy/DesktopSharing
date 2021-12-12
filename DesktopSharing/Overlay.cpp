@@ -62,6 +62,15 @@ bool Overlay::Init(SDL_Window* window, SDL_GLContext gl_context)
 
 		ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
 		ImGui_ImplOpenGL3_Init(glsl_version);
+
+		auto fonts = ImGui::GetIO().Fonts;
+		fonts->AddFontFromFileTTF(
+			"c:/windows/fonts/msyh.ttc",
+			14.0f,
+			NULL,
+			fonts->GetGlyphRangesChineseSimplifiedCommon()
+		);
+
 		window_ = window;
 		gl_context_ = gl_context;
 		return true;
@@ -173,7 +182,6 @@ bool Overlay::Copy()
 
 	ImGui::SetNextWindowPos(ImVec2((float)rect_.x, (float)rect_.y), ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2((float)rect_.w * 3 / 4, (float)rect_.h), ImGuiCond_Always);
-	//ImGui::SetNextWindowSize(ImVec2((float)rect_.w, (float)rect_.h), ImGuiCond_Always);
 	ImGui::Begin("screen-live-setting-widget", nullptr, widget_flag);
 
 	int input_flag = 0;
@@ -182,35 +190,33 @@ bool Overlay::Copy()
 	/* Encoder selection */
 	int encoder_index = 0;
 	ImGui::SetCursorPos(ImVec2(start_x, start_y));
-	ImGui::Text("Video Encoder: "); //ImGui::SameLine();
-	ImGui::SetCursorPos(ImVec2(start_x + 105, start_y - 3));
-	ImGui::RadioButton("x264", &encoder_index_, 1); ImGui::SameLine(0, 10);
-	ImGui::RadioButton("nvenc", &encoder_index_, 2); ImGui::SameLine(0, 10);
-	ImGui::RadioButton("qsv", &encoder_index_, 3);
+	ImGui::Text(u8"±àÂë: "); //ImGui::SameLine();
+	ImGui::SetCursorPos(ImVec2(start_x + 35, start_y - 3));
+	ImGui::RadioButton(u8"Èí¼þ", &encoder_index_, 1); ImGui::SameLine(0, 10);
+	ImGui::RadioButton(u8"¶ÀÏÔ", &encoder_index_, 2); ImGui::SameLine(0, 10);
+	ImGui::RadioButton(u8"ºËÏÔ", &encoder_index_, 3);
 
-	ImGui::SetCursorPos(ImVec2(start_x + 100, start_y + 28));
-	ImGui::Text(" framerate:");
-	ImGui::SetNextItemWidth(30);
-	ImGui::SetCursorPos(ImVec2(start_x + 180, start_y + 26));
+	ImGui::SetCursorPos(ImVec2(start_x + 205, start_y ));
+	ImGui::Text(u8"Ë¢ÐÂÂÊ:");
+	ImGui::SetNextItemWidth(25);
+	ImGui::SetCursorPos(ImVec2(start_x + 245, start_y - 1));
 	ImGui::InputText("##encoder-framerate", encoder_framerate_, sizeof(encoder_framerate_), ImGuiInputTextFlags_CharsDecimal);
 	ImGui::SameLine(0, 10);
-	ImGui::SetCursorPos(ImVec2(start_x + 225, start_y + 26));
-	ImGui::Text("bitrate(kbps):");
-	ImGui::SetNextItemWidth(80);
-	ImGui::SetCursorPos(ImVec2(start_x + 330, start_y + 26));
+	ImGui::SetCursorPos(ImVec2(start_x + 280, start_y - 3));
+	ImGui::Text(u8"ÂëÂÊ(kbps):");
+	ImGui::SetNextItemWidth(50);
+	ImGui::SetCursorPos(ImVec2(start_x + 345, start_y - 1));
 	ImGui::InputText("##encoder-bitrate", encoder_bitrate_kbps_, sizeof(encoder_bitrate_kbps_), ImGuiInputTextFlags_CharsDecimal);
 
 
 	/* RTMP Pusher setting */
 	LiveInfo& rtmp_pusher_info = live_info_[EVENT_TYPE_RTMP_PUSHER];
-	ImGui::SetCursorPos(ImVec2(start_x, start_y + 60));
-	ImGui::Text("RTMP Pusher:"); ImGui::SameLine();
-	ImGui::Text("url:");  //ImGui::SameLine();
-	ImGui::SetNextItemWidth(350);
-	ImGui::SetCursorPos(ImVec2(start_x + 125, start_y + 58));
+	ImGui::SetCursorPos(ImVec2(start_x, start_y + 40));
+	ImGui::Text(u8"µØÖ·:");  //ImGui::SameLine();
+	ImGui::SetNextItemWidth(300);
+	ImGui::SetCursorPos(ImVec2(start_x + 35, start_y + 38));
 	ImGui::InputText("##rtmp-pusher-url", rtmp_pusher_info.pusher_url, sizeof(LiveInfo::pusher_url), input_flag); ImGui::SameLine(0, 10);
-	if (ImGui::Button(!rtmp_pusher_info.state ? "start##rtmp-pusher" : "stop##rtmp-pusher", ImVec2(start_x + 30, start_y))) {
-		rtmp_pusher_info.state = !rtmp_pusher_info.state;
+	if (ImGui::Button(!rtmp_pusher_info.state ? u8"¿ªÊ¼##rtmp-pusher" : u8"Í£Ö¹##rtmp-pusher", ImVec2(start_x + 30, start_y))) {
 		NotifyEvent(EVENT_TYPE_RTMP_PUSHER);
 	} 
 	ImGui::SameLine(0, 10);
@@ -221,9 +227,8 @@ bool Overlay::Copy()
 	ImGui::SetNextWindowPos(ImVec2((float)rect_.x + (float)rect_.w * 3/4, (float)rect_.y), ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2((float)rect_.w/4, (float)rect_.h), ImGuiCond_Always);
 	ImGui::Begin("screen-live-info-widget", nullptr, widget_flag);
-	ImGui::Text("\n%s", debug_info_text_.c_str());
+	ImGui::Text("%s", debug_info_text_.c_str());
 	ImGui::End();
-
 	return true;
 }
 
@@ -262,6 +267,7 @@ void Overlay::NotifyEvent(int event_type)
 
 	live_index = EVENT_TYPE_RTMP_PUSHER;
 	LiveInfo& rtmp_pusher_info = live_info_[live_index];
+	rtmp_pusher_info.state = !rtmp_pusher_info.state;
 	live_settings[0] = std::string(rtmp_pusher_info.pusher_url);
 	state = &rtmp_pusher_info.state;
 

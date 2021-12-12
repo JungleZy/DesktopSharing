@@ -4,17 +4,13 @@
 #include "xop/RtspServer.h"
 #include "xop/RtspPusher.h"
 #include "xop/RtmpPublisher.h"
-#include "AACEncoder.h"
 #include "H264Encoder.h"
-#include "AudioCapture/AudioCapture.h"
 #include "ScreenCapture/ScreenCapture.h"
 #include <mutex>
 #include <atomic>
 #include <string>
 #include <set>
 
-#define SCREEN_LIVE_RTSP_SERVER 1
-#define SCREEN_LIVE_RTSP_PUSHER 2
 #define SCREEN_LIVE_RTMP_PUSHER 3
 
 struct AVConfig
@@ -37,13 +33,7 @@ struct AVConfig
 struct LiveConfig
 {
 	// pusher
-	std::string rtsp_url;
 	std::string rtmp_url;
-
-	// server
-	std::string suffix;
-	std::string ip;
-	uint16_t port;
 };
 
 class ScreenLive
@@ -77,9 +67,7 @@ private:
 	ScreenLive();
 	
 	void EncodeVideo();
-	void EncodeAudio();
 	void PushVideo(const uint8_t* data, uint32_t size, uint32_t timestamp);
-	void PushAudio(const uint8_t* data, uint32_t size, uint32_t timestamp);
 	bool IsKeyFrame(const uint8_t* data, uint32_t size);
 
 	bool is_initialized_ = false;
@@ -91,24 +79,18 @@ private:
 
 	// capture
 	ScreenCapture* screen_capture_ = nullptr;
-	AudioCapture audio_capture_;
 
     // encoder
 	H264Encoder h264_encoder_;
-	AACEncoder aac_encoder_;
 	std::shared_ptr<std::thread> encode_video_thread_ = nullptr;
-	std::shared_ptr<std::thread> encode_audio_thread_ = nullptr;
 
 	// streamer
 	xop::MediaSessionId media_session_id_ = 0;
 	std::unique_ptr<xop::EventLoop> event_loop_ = nullptr;
-	std::shared_ptr<xop::RtspServer> rtsp_server_ = nullptr;
-	std::shared_ptr<xop::RtspPusher> rtsp_pusher_ = nullptr;
 	std::shared_ptr<xop::RtmpPublisher> rtmp_pusher_ = nullptr;
 
 	// status info
 	std::atomic_int encoding_fps_;
-	std::set<std::string> rtsp_clients_;
 };
 
 #endif

@@ -11,7 +11,6 @@ ScreenLive::ScreenLive()
 	: event_loop_(new xop::EventLoop)
 {
 	encoding_fps_ = 0;
-	rtsp_clients_.clear();
 }
 
 ScreenLive::~ScreenLive()
@@ -41,22 +40,13 @@ std::string ScreenLive::GetStatusInfo()
 	std::string info;
 
 	if (is_encoder_started_) {
-		info += "Encoder: " + av_config_.codec + " \n\n";
-		info += "Encoding framerate: " + std::to_string(encoding_fps_) + " \n\n";
-	}
-
-	if (rtsp_server_ != nullptr) {
-		info += "RTSP Server (connections): " + std::to_string(rtsp_clients_.size()) + " \n\n";
-	}
-
-	if (rtsp_pusher_ != nullptr) {		
-		std::string status = rtsp_pusher_->IsConnected() ? "connected" : "disconnected";
-		info += "RTSP Pusher: " + status + " \n\n";
+		info += u8"编码: " + av_config_.codec + " \n\n";
+		info += u8"刷新率: " + std::to_string(encoding_fps_) + " \n\n";
 	}
 
 	if (rtmp_pusher_ != nullptr) {
-		std::string status = rtmp_pusher_->IsConnected() ? "connected" : "disconnected";
-		info += "RTMP Pusher: " + status + " \n\n";
+		std::string status = rtmp_pusher_->IsConnected() ? u8"推送中" : u8"断开";
+		info += u8"状态: " + status + " \n\n";
 	}
 
 	return info;
@@ -85,19 +75,9 @@ void ScreenLive::Destroy()
 	{
 		std::lock_guard<std::mutex> locker(mutex_);
 
-		if (rtsp_pusher_ != nullptr && rtsp_pusher_->IsConnected()) {
-			rtsp_pusher_->Close();
-			rtsp_pusher_ = nullptr;
-		}
-
 		if (rtmp_pusher_ != nullptr && rtmp_pusher_->IsConnected()) {
 			rtmp_pusher_->Close();
 			rtmp_pusher_ = nullptr;
-		}
-
-		if (rtsp_server_ != nullptr) {
-			rtsp_server_->RemoveSession(media_session_id_);
-			rtsp_server_ = nullptr;
 		}
 	}
 
@@ -112,111 +92,45 @@ bool ScreenLive::StartLive(int type, LiveConfig& config)
 		return false;
 	}
 
-	uint32_t samplerate = audio_capture_.GetSamplerate();
-	uint32_t channels = audio_capture_.GetChannels();
 
-	if (type == SCREEN_LIVE_RTSP_SERVER) {	
-		auto rtsp_server = xop::RtspServer::Create(event_loop_.get());
-		xop::MediaSessionId session_id = 0;
+	auto rtmp_pusher = xop::RtmpPublisher::Create(event_loop_.get());
 
-		if (config.ip == "127.0.0.1") {
-			config.ip = "0.0.0.0";
-		}
-
-		if (!rtsp_server->Start(config.ip, config.port)) {
-			return false;
-		}
-
-		xop::MediaSession* session = xop::MediaSession::CreateNew(config.suffix);
-		session->AddSource(xop::channel_0, xop::H264Source::CreateNew());
-		session->AddSource(xop::channel_1, xop::AACSource::CreateNew(samplerate, channels, false));
-		session->AddNotifyConnectedCallback([this](xop::MediaSessionId sessionId, std::string peer_ip, uint16_t peer_port) {			
-			this->rtsp_clients_.emplace(peer_ip + ":" + std::to_string(peer_port));
-			printf("RTSP client: %u\n", this->rtsp_clients_.size());
-		});
-		session->AddNotifyDisconnectedCallback([this](xop::MediaSessionId sessionId, std::string peer_ip, uint16_t peer_port) {			
-			this->rtsp_clients_.erase(peer_ip + ":" + std::to_string(peer_port));
-			printf("RTSP client: %u\n", this->rtsp_clients_.size());
-		});
+	xop::MediaInfo mediaInfo;
+	uint8_t extradata[1024] = { 0 };
+	int  extradata_size = 0;
 
 
-		session_id = rtsp_server->AddSession(session);
-		//printf("RTSP Server: rtsp://%s:%hu/%s \n", xop::NetInterface::GetLocalIPAddress().c_str(), config.port, config.suffix.c_str());
-		printf("RTSP Server start: rtsp://%s:%hu/%s \n", config.ip.c_str(), config.port, config.suffix.c_str());
-
-		std::lock_guard<std::mutex> locker(mutex_);
-		rtsp_server_ = rtsp_server;
-		media_session_id_ = session_id;
-	}
-	else if (type == SCREEN_LIVE_RTSP_PUSHER) {
-		auto rtsp_pusher = xop::RtspPusher::Create(event_loop_.get());
-		xop::MediaSession *session = xop::MediaSession::CreateNew();
-		session->AddSource(xop::channel_0, xop::H264Source::CreateNew());
-		session->AddSource(xop::channel_1, xop::AACSource::CreateNew(audio_capture_.GetSamplerate(), audio_capture_.GetChannels(), false));
-		
-		rtsp_pusher->AddSession(session);
-		if (rtsp_pusher->OpenUrl(config.rtsp_url, 1000) != 0) {
-			rtsp_pusher = nullptr;
-			printf("RTSP Pusher: Open url(%s) failed. \n", config.rtsp_url.c_str());
-			return false;
-		}
-
-		std::lock_guard<std::mutex> locker(mutex_);
-		rtsp_pusher_ = rtsp_pusher;
-		printf("RTSP Pusher start: Push stream to  %s ... \n", config.rtsp_url.c_str());
-	}
-	else if (type == SCREEN_LIVE_RTMP_PUSHER) {
-		auto rtmp_pusher = xop::RtmpPublisher::Create(event_loop_.get());
-
-		xop::MediaInfo mediaInfo;
-		uint8_t extradata[1024] = { 0 };
-		int  extradata_size = 0;
-
-		extradata_size = aac_encoder_.GetSpecificConfig(extradata, 1024);
-		if (extradata_size <= 0) {
-			printf("Get audio specific config failed. \n");
-			return false;
-		}
-
-		mediaInfo.audio_specific_config_size = extradata_size;
-		mediaInfo.audio_specific_config.reset(new uint8_t[mediaInfo.audio_specific_config_size], std::default_delete<uint8_t[]>());
-		memcpy(mediaInfo.audio_specific_config.get(), extradata, extradata_size);
-
-		extradata_size = h264_encoder_.GetSequenceParams(extradata, 1024);
-		if (extradata_size <= 0) {
-			printf("Get video specific config failed. \n");
-			return false;
-		}
-
-		xop::Nal sps = xop::H264Parser::findNal((uint8_t*)extradata, extradata_size);
-		if (sps.first != nullptr && sps.second != nullptr && ((*sps.first & 0x1f) == 7)) {
-			mediaInfo.sps_size = sps.second - sps.first + 1;
-			mediaInfo.sps.reset(new uint8_t[mediaInfo.sps_size], std::default_delete<uint8_t[]>());
-			memcpy(mediaInfo.sps.get(), sps.first, mediaInfo.sps_size);
-
-			xop::Nal pps = xop::H264Parser::findNal(sps.second, extradata_size - (sps.second - (uint8_t*)extradata));
-			if (pps.first != nullptr && pps.second != nullptr && ((*pps.first&0x1f) == 8)) {
-				mediaInfo.pps_size = pps.second - pps.first + 1;
-				mediaInfo.pps.reset(new uint8_t[mediaInfo.pps_size], std::default_delete<uint8_t[]>());
-				memcpy(mediaInfo.pps.get(), pps.first, mediaInfo.pps_size);
-			}
-		}
-
-		rtmp_pusher->SetMediaInfo(mediaInfo);
-
-		std::string status;
-		if (rtmp_pusher->OpenUrl(config.rtmp_url, 1000, status) < 0) {
-			printf("RTMP Pusher: Open url(%s) failed. \n", config.rtmp_url.c_str());
-			return false;
-		}
-
-		std::lock_guard<std::mutex> locker(mutex_);
-		rtmp_pusher_ = rtmp_pusher;
-		printf("RTMP Pusher start: Push stream to  %s ... \n", config.rtmp_url.c_str());
-	}
-	else {
+	extradata_size = h264_encoder_.GetSequenceParams(extradata, 1024);
+	if (extradata_size <= 0) {
+		printf("Get video specific config failed. \n");
 		return false;
 	}
+
+	xop::Nal sps = xop::H264Parser::findNal((uint8_t*)extradata, extradata_size);
+	if (sps.first != nullptr && sps.second != nullptr && ((*sps.first & 0x1f) == 7)) {
+		mediaInfo.sps_size = sps.second - sps.first + 1;
+		mediaInfo.sps.reset(new uint8_t[mediaInfo.sps_size], std::default_delete<uint8_t[]>());
+		memcpy(mediaInfo.sps.get(), sps.first, mediaInfo.sps_size);
+
+		xop::Nal pps = xop::H264Parser::findNal(sps.second, extradata_size - (sps.second - (uint8_t*)extradata));
+		if (pps.first != nullptr && pps.second != nullptr && ((*pps.first&0x1f) == 8)) {
+			mediaInfo.pps_size = pps.second - pps.first + 1;
+			mediaInfo.pps.reset(new uint8_t[mediaInfo.pps_size], std::default_delete<uint8_t[]>());
+			memcpy(mediaInfo.pps.get(), pps.first, mediaInfo.pps_size);
+		}
+	}
+
+	rtmp_pusher->SetMediaInfo(mediaInfo);
+
+	std::string status;
+	if (rtmp_pusher->OpenUrl(config.rtmp_url, 1000, status) < 0) {
+		printf("RTMP Pusher: Open url(%s) failed. \n", config.rtmp_url.c_str());
+		return false;
+	}
+
+	std::lock_guard<std::mutex> locker(mutex_);
+	rtmp_pusher_ = rtmp_pusher;
+	printf("RTMP Pusher start: Push stream to  %s ... \n", config.rtmp_url.c_str());
 
 	return true;
 }
@@ -227,24 +141,6 @@ void ScreenLive::StopLive(int type)
 
 	switch (type)
 	{
-	case SCREEN_LIVE_RTSP_SERVER:
-		if (rtsp_server_ != nullptr) {
-			rtsp_server_->Stop();
-			rtsp_server_ = nullptr;
-			rtsp_clients_.clear();
-			printf("RTSP Server stop. \n");
-		}
-		
-		break;
-
-	case SCREEN_LIVE_RTSP_PUSHER:
-		if (rtsp_pusher_ != nullptr) {
-			rtsp_pusher_->Close();
-			rtsp_pusher_ = nullptr;
-			printf("RTSP Pusher stop. \n");
-		}		
-		break;
-
 	case SCREEN_LIVE_RTMP_PUSHER:
 		if (rtmp_pusher_ != nullptr) {
 			rtmp_pusher_->Close();
@@ -265,18 +161,6 @@ bool ScreenLive::IsConnected(int type)
 	bool is_connected = false;
 	switch (type)
 	{
-	case SCREEN_LIVE_RTSP_SERVER:
-		if (rtsp_server_ != nullptr) {
-			is_connected = rtsp_clients_.size() > 0;
-		}		
-		break;
-
-	case SCREEN_LIVE_RTSP_PUSHER:
-		if (rtsp_pusher_ != nullptr) {
-			is_connected = rtsp_pusher_->IsConnected();
-		}		
-		break;
-
 	case SCREEN_LIVE_RTMP_PUSHER:
 		if (rtmp_pusher_ != nullptr) {
 			is_connected = rtmp_pusher_->IsConnected();
@@ -330,10 +214,6 @@ int ScreenLive::StartCapture()
 			return -1;
 		}
 	}
-	
-	if (!audio_capture_.Init()) {
-		return -1;
-	}
 
 	is_capture_started_ = true;
 	return 0;
@@ -347,7 +227,6 @@ int ScreenLive::StopCapture()
 			delete screen_capture_;
 			screen_capture_ = nullptr;
 		}
-		audio_capture_.Destroy();
 		is_capture_started_ = false;
 	}
 
@@ -378,15 +257,8 @@ int ScreenLive::StartEncoder(AVConfig& config)
 		return -1;
 	}
 
-	int samplerate = audio_capture_.GetSamplerate();
-	int channels = audio_capture_.GetChannels();
-	if (!aac_encoder_.Init(samplerate, channels, AV_SAMPLE_FMT_S16, 64)) {
-		return -1;
-	}
-
 	is_encoder_started_ = true;
 	encode_video_thread_.reset(new std::thread(&ScreenLive::EncodeVideo, this));
-	encode_audio_thread_.reset(new std::thread(&ScreenLive::EncodeAudio, this));
 	return 0;
 }
 
@@ -399,14 +271,7 @@ int ScreenLive::StopEncoder()
 			encode_video_thread_->join();
 			encode_video_thread_ = nullptr;
 		}
-
-		if (encode_audio_thread_) {
-			encode_audio_thread_->join();
-			encode_audio_thread_ = nullptr;
-		}
-
 		h264_encoder_.Destroy();
-		aac_encoder_.Destroy();
 	}
 
 	return 0;
@@ -470,32 +335,6 @@ void ScreenLive::EncodeVideo()
 	encoding_fps_ = 0;
 }
 
-void ScreenLive::EncodeAudio()
-{
-	std::shared_ptr<uint8_t> pcm_buffer(new uint8_t[48000 * 8], std::default_delete<uint8_t[]>());
-	uint32_t frame_samples = aac_encoder_.GetFrames();
-	uint32_t channel = audio_capture_.GetChannels();
-	uint32_t samplerate = audio_capture_.GetSamplerate();
-	
-	while (is_encoder_started_)
-	{		
-		if (audio_capture_.GetSamples() >= (int)frame_samples) {
-			if (audio_capture_.Read(pcm_buffer.get(), frame_samples) != frame_samples) {
-				continue;
-			}
-
-			ffmpeg::AVPacketPtr pkt_ptr = aac_encoder_.Encode(pcm_buffer.get(), frame_samples);
-			if (pkt_ptr) {
-				uint32_t timestamp = xop::AACSource::GetTimestamp(samplerate);
-				PushAudio(pkt_ptr->data, pkt_ptr->size, timestamp);
-			}
-		}
-		else {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-	}
-}
-
 void ScreenLive::PushVideo(const uint8_t* data, uint32_t size, uint32_t timestamp)
 {
 	xop::AVFrame video_frame(size);
@@ -507,47 +346,9 @@ void ScreenLive::PushVideo(const uint8_t* data, uint32_t size, uint32_t timestam
 	if (size > 0) {
 		std::lock_guard<std::mutex> locker(mutex_);
 
-		/* RTSP服务器 */
-		if (rtsp_server_ != nullptr && this->rtsp_clients_.size() > 0) {
-			rtsp_server_->PushFrame(media_session_id_, xop::channel_0, video_frame);
-		}
-
-		/* RTSP推流 */
-		if (rtsp_pusher_ != nullptr && rtsp_pusher_->IsConnected()) {
-			rtsp_pusher_->PushFrame(xop::channel_0, video_frame);
-		}
-
 		/* RTMP推流 */
 		if (rtmp_pusher_ != nullptr && rtmp_pusher_->IsConnected()) {
 			rtmp_pusher_->PushVideoFrame(video_frame.buffer.get(), video_frame.size);
-		}
-	}
-}
-
-void ScreenLive::PushAudio(const uint8_t* data, uint32_t size, uint32_t timestamp)
-{
-	xop::AVFrame audio_frame(size);
-	audio_frame.timestamp = timestamp;
-	audio_frame.type = xop::AUDIO_FRAME;
-	audio_frame.size = size;
-	memcpy(audio_frame.buffer.get(), data, size);
-
-	if(size > 0){
-		std::lock_guard<std::mutex> locker(mutex_);
-
-		/* RTSP服务器 */
-		if (rtsp_server_ != nullptr && this->rtsp_clients_.size() > 0) {
-			rtsp_server_->PushFrame(media_session_id_, xop::channel_1, audio_frame);
-		}
-
-		/* RTSP推流 */
-		if (rtsp_pusher_ && rtsp_pusher_->IsConnected()) {
-			rtsp_pusher_->PushFrame(xop::channel_1, audio_frame);
-		}
-
-		/* RTMP推流 */
-		if (rtmp_pusher_ != nullptr && rtmp_pusher_->IsConnected()) {
-			rtmp_pusher_->PushAudioFrame(audio_frame.buffer.get(), audio_frame.size);
 		}
 	}
 }

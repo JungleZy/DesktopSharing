@@ -52,13 +52,20 @@ public:
 
 	void SetLiveState(int event_type, bool state);
 	void SetDebugInfo(std::string text);
+	void NotifyEvent(int event_type);
+
+	struct LiveInfo {
+		char pusher_url[60];
+
+		bool state = false;
+		char state_info[16];
+	} live_info_[10];
 
 private:
 	void Init();
 	bool Copy();
 	bool Begin();
 	bool End();
-	void NotifyEvent(int event_type);
 
 	SDL_Window* window_ = nullptr;
 	IDirect3DDevice9* device_ = nullptr;
@@ -75,13 +82,6 @@ private:
 	int  encoder_index_ = 1;
 	char encoder_bitrate_kbps_[8];
 	char encoder_framerate_[3];
-
-	struct LiveInfo {
-		char pusher_url[60];
-
-		bool state = false;
-		char state_info[16];
-	} live_info_[10] ;
 };
 
 #endif
